@@ -1,0 +1,410 @@
+program Pendulum;
+
+{Solves the double pendulum problem}
+
+ const
+
+  dim = 2;{number of pendula}
+
+  dt = 0.01; {time increment}
+
+  pi = 3.1415926535;
+
+  g = -980;	{acceleration of
+gravity}
+
+  horiz = 160; {point of suspension of top pendulum}
+
+  vert = 200; {point of suspension of top pendulum}
+
+
+
+ type
+
+  vector = array[1..dim] of real;
+
+ var
+
+  theta, thetadot, thetadoubledot: vector;	{angles w/r/t positive
+vertical}
+
+  x, y, d: vector;	{center of mass space
+coordinates,distance from end of pendulum}
+
+  mass, inertia, length: vector;	{mass, moment of
+inertia,length of pendula}
+
+  Iprime, Vprime, A, B: vector; 	{useful coefficients}
+
+  sine, cosine: vector;
+	{sine[theta],cosine[theta]}
+
+  t, Icross, sinedelta, cosinedelta, denom: real; {time, useful coeffiecients}
+
+  endx1, endx2, endy1, endy2: real;	{coords. of pendulum
+endpts.}
+
+  newendx1, newendx2, newendy1, newendy2: real;	{newly calculated
+coordinates}
+
+  k1, k2, v1, v2, totalenergy: real;
+
+  r: rect;
+
+
+
+{off-screen stuff}
+
+  oldPort: GrafPtr;
+
+  offScreen: GrafPort;
+
+
+
+ procedure InitOffScreen;
+
+ begin
+
+  GetPort(oldPort);
+
+  OpenPort(@offScreen);
+
+  PenMode(srcXOR);
+
+  SetPort(oldPort);
+
+  with offScreen, portBits, bounds do
+
+   begin
+
+    portRect := thePort^.portRect;
+
+    bounds := portRect;
+
+    rowBytes := (((right - left) + 15) div 16) * 2;
+
+    baseAddr := NewPtr(rowBytes * Longint(bottom - top));
+
+    if MemError <> 0 then
+
+     begin
+
+     ShowText;
+
+     WriteLn('NewPtr failed in InitOffScreen!');
+
+     SysBeep(60);
+
+     Halt;
+
+     end;
+
+   end;
+
+ end;
+
+
+
+ procedure EraseOffScreen;
+
+ begin
+
+  SetPort(@offScreen);
+
+  EraseRect(thePort^.portRect);
+
+  SetPort(oldPort);
+
+ end;
+
+
+
+ procedure update (var a: vector; b: vector);
+
+  var
+
+   i: integer;
+
+ begin
+
+  for i := 1 to dim do
+
+   a[i] := a[i] + dt * b[i];
+
+ end; {update}
+
+
+
+ procedure draw_pendulum;
+
+ begin
+
+  SetPort(@offScreen);
+
+  MoveTo(horiz, vert);	{move to orgin}
+
+  LineTo(trunc(endx1), trunc(endy1));	{draw pendulum 1}
+
+  LineTo(trunc(endx2), trunc(endy2));	{draw pendulum 2}
+
+  SetPort(oldPort);
+
+ end;
+
+
+
+ procedure initvals;
+
+ begin	{initvals}
+
+  t := 0;
+
+  mass[1] := 200;	{grams}
+
+  mass[2] := 200;	{grams}
+
+  length[1] := 100;	{cm}
+
+  length[2] := 80;	{cm}
+
+  inertia[1] := 10000;	{gm-cm.cm}
+
+  inertia[2] := 10000;	{gm-cm.cm}
+
+  d[1] := 4 * length[1] / 5;
+
+  d[2] := 4 * length[2] / 5;
+
+
+
+{computed intermediate coefficients}
+
+
+
+  Iprime[1] := mass[1] * sqr(d[1]) + mass[2] * sqr(length[1]) + inertia[1];
+
+  Iprime[2] := mass[2] * sqr(d[2]) + inertia[2];
+
+  Icross := mass[2] * length[1] * d[2];
+
+  Vprime[1] := g * (mass[1] * d[1] + mass[2] * length[1]);
+
+  Vprime[2] := g * mass[2] * d[2];
+
+  A[1] := Vprime[1] / Iprime[1];
+
+  A[2] := Vprime[2] / Iprime[2];
+
+  B[1] := Icross / Iprime[1];
+
+  B[2] := Icross / Iprime[2];
+
+
+
+{initial conditions}
+
+
+
+  theta[1] := pi / 2;
+
+  theta[2] := pi;
+
+  thetadot[1] := 0;
+
+  thetadot[2] := 0;
+
+  thetadoubledot[1] := 0;
+
+  thetadoubledot[2] := 0;
+
+
+
+{compute useful things for main loop}
+
+
+
+  sine[1] := sin(theta[1]);
+
+  sine[2] := sin(theta[2]);
+
+  cosine[1] := cos(theta[1]);
+
+  cosine[2] := cos(theta[2]);
+
+  sinedelta := sin(theta[1] - theta[2]);
+
+  cosinedelta := cos(theta[1] - theta[2]);
+
+  denom := 1 + B[1] * B[2] * cosinedelta * cosinedelta;
+
+
+
+{compute endpoints for drawing procedure}
+
+
+
+  endx1 := horiz + length[1] * sine[1];
+
+  endy1 := vert + length[1] * cosine[1];
+
+  endx2 := endx1 + length[2] * sine[2];
+
+  endy2 := endy1 + length[2] * cosine[2];
+
+
+
+
+
+ end;	{initvals}
+
+
+
+ procedure calculate;
+
+ begin
+
+
+
+{compute energies}
+
+
+
+  k1 := 0.5 * (mass[1] * sqr(d[1] * thetadot[1]) + inertia[1] *
+sqr(thetadot[1]));
+
+  k2 := 0.5 * (mass[2] * (sqr(length[1] * thetadot[1]) + sqr(d[2] *
+thetadot[2]) + 2 * length[1] * d[2] * thetadot[1] * thetadot[2] * cos(theta[1]
+- theta[2])) + inertia[2] * sqr(thetadot[2]));
+
+  v1 := mass[1] * g * d[1] * cos(theta[1]);
+
+  v2 := mass[2] * g * (length[1] * cos(theta[1]) + d[2] * cos(theta[2]));
+
+  totalenergy := k1 + k2 + v1 + v2;
+
+
+
+{now calculate the accelerations}
+
+
+
+  thetadoubledot[1] := (A[1] * sine[1] - B[1] * thetadot[2] * thetadot[2] *
+sinedelta - B[1] * (A[2] * sine[2] + B[2] * thetadot[1] * thetadot[1] *
+sinedelta) * cosinedelta) / (denom);
+
+  thetadoubledot[2] := (A[2] * sine[2] + B[2] * thetadot[1] * thetadot[1] *
+sinedelta - B[2] * (A[1] * sine[1] - B[1] * thetadot[2] * thetadot[2] *
+sinedelta) * cosinedelta) / (denom);
+
+
+
+{then update angular velocities and angles}
+
+
+
+  update(thetadot, thetadoubledot);
+
+  update(theta, thetadot);
+
+
+
+{calculate multiply-used stuff for next time}
+
+
+
+  sine[1] := sin(theta[1]);
+
+  sine[2] := sin(theta[2]);
+
+  cosine[1] := cos(theta[1]);
+
+  cosine[2] := cos(theta[2]);
+
+  sinedelta := sin(theta[1] - theta[2]);
+
+  cosinedelta := cos(theta[1] - theta[2]);
+
+  denom := 1 + B[1] * B[2] * cosinedelta;
+
+
+
+{compute endpoints for drawing procedure}
+
+
+
+  newendx1 := horiz + length[1] * sine[1];
+
+  newendy1 := vert + length[1] * cosine[1];
+
+  newendx2 := newendx1 + length[2] * sine[2];
+
+  newendy2 := newendy1 + length[2] * cosine[2];
+
+
+
+
+
+ end;
+		{calculate}
+
+
+
+begin {main}
+
+ ShowDrawing;	{open drawing window}
+
+ InitOffScreen;	{set up off-screen
+bitmap}
+
+ EraseOffScreen;	{erase off-screen
+bitmap}
+
+ initvals;
+		{initialize}
+
+ draw_pendulum;	{draw pendulum in
+initial position}
+
+ CopyBits(offScreen.portBits, thePort^.portBits, offScreen.portRect,
+thePort^.portRect, srcCopy, nil);
+
+
+
+{main loop}
+
+
+
+ repeat
+
+  t := t + dt;
+
+  calculate;
+
+  draw_pendulum;	{erase pendulum}
+
+
+
+{update drawing coordinates}
+
+
+
+  endx1 := newendx1;
+
+  endx2 := newendx2;
+
+  endy1 := newendy1;
+
+  endy2 := newendy2;
+
+
+
+  draw_pendulum;	{draw it back in new
+position}
+
+  CopyBits(offScreen.portBits, thePort^.portBits, offScreen.portRect,
+thePort^.portRect, srcCopy, nil);
+
+ until Button
+
+end.
+
